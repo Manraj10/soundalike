@@ -13,12 +13,11 @@ const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
 
-// Run under the packaged app's identity, not "Electron". userData is derived
-// from the app name, so without this the script provisions into
-// %APPDATA%/Electron and the real app would re-download the same 3GB.
-// Must happen before anything reads app.getPath("userData").
-app.setName("Soundalike");
-
+// No app.setName() here on purpose. An earlier version set it locally to
+// "Soundalike" so this script would not provision into %APPDATA%/Electron --
+// but the packaged exe resolved to %APPDATA%/voicebox, so this script passed
+// against a path the real app never used. Identity now lives in bootstrap.js
+// and is inherited by requiring it, so the two entry points cannot diverge.
 const bootstrap = require("../src/bootstrap");
 
 const FRESH = process.argv.includes("--fresh");
@@ -117,8 +116,24 @@ app.whenReady().then(async () => {
   let code = 0;
   try {
     const R = bootstrap.root();
+    log(`app name:    ${app.getName()}`);
     log(`runtime dir: ${R}`);
     log(`userData:    ${app.getPath("userData")}`);
+
+    // Hard gate. If the identity ever drifts again, this script must fail rather
+    // than quietly verify a directory the shipped app does not use.
+    if (app.getName() !== "soundalike") {
+      throw new Error(`app name is "${app.getName()}", expected "soundalike" — ` +
+                      `this run would verify the wrong userData path`);
+    }
+    const stale = ["voicebox", "Electron"].map((n) =>
+      path.join(path.dirname(app.getPath("userData")), n, "runtime"));
+    for (const s of stale) {
+      if (fs.existsSync(s)) {
+        log(`WARNING: stale runtime still present at ${s} — delete it so this ` +
+            `test cannot accidentally rely on it`);
+      }
+    }
 
     if (FRESH && fs.existsSync(R)) {
       log("--fresh: removing existing runtime");

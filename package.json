@@ -1,11 +1,14 @@
 {
-  "name": "voicebox",
+  "name": "soundalike",
   "version": "0.1.0",
   "private": true,
   "description": "Local voice cloning on your own machine. No account, no cloud, no Python.",
   "author": "Manraj Singh",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Manraj10/soundalike.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Manraj10/soundalike.git"
+  },
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -21,14 +24,28 @@
   "build": {
     "appId": "dev.soundalike.app",
     "productName": "Soundalike",
-    "files": ["src/**/*", "package.json"],
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
     "extraResources": [
-      { "from": "engine", "to": "engine", "filter": ["**/*.py"] }
+      {
+        "from": "engine",
+        "to": "engine",
+        "filter": [
+          "**/*.py"
+        ]
+      }
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "signAndEditExecutable": false
     },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
