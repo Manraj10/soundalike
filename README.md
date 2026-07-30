@@ -1,92 +1,41 @@
 # Soundalike
 
-**Clone a voice on your own machine. No account, no cloud, no Python.**
+**Clone a voice on your own machine. ~600 lines, one job, no Python for the user.**
 
-<!-- DEMO.gif goes here, above everything. No badges above the fold. -->
+<!-- docs/demo.gif goes here, above everything -->
 
-Every good open-source voice model already exists. What doesn't exist is a way
-for a normal person to use one. The popular options all end the same way:
+## Read this first
 
-```
-git clone …
-python -m venv .venv
-pip install -r requirements.txt   # then fight CUDA for an hour
-python server.py                  # then open localhost:7860 in a browser
-```
+If you want a full local voice studio, use **[jamiepine/voicebox](https://github.com/jamiepine/voicebox)** (47k★, MIT). It has 7 TTS engines, dictation, MCP integration, and voice personalities, and it is excellent. Soundalike does not compete with it and you should not pick this over it for features.
 
-Soundalike is a Windows app. You download it, double-click it, drop in ten
-seconds of someone talking, and type. That's the whole thing.
+Soundalike exists for two narrower reasons:
 
----
+1. **It is small.** One engine, one window, one job: drop in a voice, type, get audio. The whole app is about 600 lines of JavaScript and 300 of Python. If you want to read the entire thing in one sitting, or fork it into something else, that is easier here.
+2. **It is a worked example of the packaging problem.** Shipping a CUDA PyTorch app as a Windows desktop app that a non-developer can install is genuinely awkward, and most projects solve it by telling the user to make a venv. The bootstrap here does it properly and the code is commented with the specific traps, which are not obvious and cost real time to find. See [How the packaging works](#how-the-packaging-works).
 
 ## Speed
 
-Measured on an RTX 4070 Laptop (8GB), 7 seconds of generated speech, steady
-state after one warm-up pass. RTF is the multiple of realtime — lower is better,
-1.0x means it generates speech as fast as you'd speak it.
+Measured on an RTX 4070 Laptop (8GB), 7 seconds of generated speech, steady state after one warm-up pass. RTF is the multiple of realtime — lower is better.
 
 | Checkpoint | Time for 7s of audio | RTF |
 | ---------- | -------------------- | --- |
 | turbo (default) | 9.5s | **1.19x** |
 | base | 15.4s | 2.20x |
 
-Longer inputs get closer to realtime, since a fixed per-call cost is amortised
-over more audio. Reproduce it yourself with `python bench_turbo.py`.
+Longer inputs sit closer to realtime, since a fixed per-call cost is amortised over more audio. Reproduce with `python bench_turbo.py`. Do not benchmark on a 3-second string — per-call overhead dominates and you will measure 4.5x.
 
 ## What it does
 
 - **Clones a voice from a short sample** — 5 seconds minimum, 10–20 works best.
 - **Near-realtime on a laptop GPU** — 1.19x realtime on a mobile 4070.
-- **23 languages** — Arabic, Chinese, Danish, Dutch, English, Finnish, French,
-  German, Greek, Hebrew, Hindi, Italian, Japanese, Korean, Malay, Norwegian,
-  Polish, Portuguese, Russian, Spanish, Swahili, Swedish, Turkish.
-- **Runs entirely offline.** Nothing you type or record leaves the machine.
-- **Uses your GPU** when you have one, falls back to CPU when you don't.
-- **No Python, no terminal, no localhost.** The model runs in a background
-  process the app talks to over a pipe — there's no web server, so there's no
-  port to conflict and no Windows Firewall prompt.
+- **Runs entirely offline** after setup. Nothing you type or record leaves the machine.
+- **No web server.** Electron talks to the Python engine over a stdio pipe, so there is no port to collide, no firewall prompt, and no browser tab. "Offline" is a property of the architecture, not a promise.
 
-## What it doesn't do
+## Status, honestly
 
-Written here by me, before anyone else writes it for me:
+The engine works and is verified end to end. First-run provisioning works, but **is not reliable on a slow or unstable connection** — it pulls a single 2.5GB PyTorch wheel, and if the connection drops repeatedly, pip restarts rather than resuming and setup can fail. `--resume-retries` helps and did not fully solve it on my link. The fix is to fetch the wheel with a resumable ranged download instead of delegating to pip; that is the top open issue.
 
-- **Windows only** right now. macOS and Linux are not built yet.
-- **First launch takes ~17 minutes** — the Python runtime, PyTorch and the model
-  weights, once, ending at ~5.8GB on disk. After that it works with the network
-  off.
-- **Needs an NVIDIA GPU to be fast.** It runs on CPU, just slowly.
-- **Quality depends on your sample.** Ten seconds of clean, dry, single-speaker
-  audio beats a minute of a noisy podcast clip. Background music ruins it.
-- **It does not verify consent.** See below — this matters.
-
-## Consent
-
-Cloning a voice is not a neutral act. Don't clone someone who hasn't agreed to
-it. Impersonation to commit fraud is a crime in most places, and "it was open
-source" is not a defense. This tool exists for people making things with their
-own voice, or with a voice they have explicit permission to use.
-
----
-
-## Status
-
-Working. First-run provisioning is verified end to end on a clean runtime —
-`npm run verify:setup:fresh` provisions and then generates real audio through
-the same stdio protocol the app uses. Still unsigned, so a release build will
-trip SmartScreen until there's a certificate.
-
-## Install
-
-*(once released)* Download the latest `.exe` from [Releases](../../releases)
-and run it.
-
-The installer is 82MB. First launch takes about **17 minutes** on a ~4 MB/s
-connection and leaves a **5.8 GB** runtime — measured, not estimated. On first launch the app fetches its own private Python
-runtime, PyTorch and the model weights (~3GB) behind a progress bar, then never
-touches the network again. That lives in `%APPDATA%/Soundalike/runtime`, so
-uninstalling removes it and a broken environment can be fixed by deleting one
-folder. Nothing is installed system-wide, and your system Python — if you even
-have one — is not touched.
+The installer is also **unsigned**, so SmartScreen will warn. Build from source until both are addressed.
 
 ## Build from source
 
@@ -100,10 +49,18 @@ python -m venv .venv
 npm start
 ```
 
-Verify the engine on its own, without the UI:
+If Electron's binary is missing, npm's allow-scripts policy blocked its postinstall — run `node install.js` inside `node_modules/electron` rather than loosening the policy.
+
+Verify the engine without the UI:
 
 ```bash
 npm run engine:test
+```
+
+Verify first-run provisioning against a clean runtime:
+
+```bash
+npm run verify:setup:fresh
 ```
 
 ## How it works
@@ -112,17 +69,34 @@ npm run engine:test
 Electron UI  ──JSON over stdin/stdout──▶  Python engine  ──▶  Chatterbox (MIT)
 ```
 
-One long-lived Python child process. Requests and replies are newline-delimited
-JSON matched by id; progress events stream back while the model loads and
-generates. Deliberately not an HTTP server — a pipe can't be reached from off
-the machine, so "fully offline" is a property of the architecture rather than a
-promise in a README.
+One long-lived Python child. Requests and replies are newline-delimited JSON matched by id; progress events stream back while the model loads and generates.
+
+## How the packaging works
+
+The installer is 82MB. The ~5.8GB of Python, PyTorch and model weights is fetched once on first launch, behind a progress bar, into `%APPDATA%/soundalike/runtime`. Uninstalling removes it; a broken environment is fixed by deleting one folder; your system Python is never touched.
+
+Five traps that cost real time, all commented in the source:
+
+- **`pkg_resources` is missing from standalone Python.** python-build-standalone's `install_only` build ships without setuptools. Chatterbox's watermarker dependency imports `pkg_resources`, catches its own ImportError, and leaves the class as `None` — so it fails on the user's *first generate*, not at import. Invisible in development, because every venv has setuptools. And installing setuptools is not enough: **version 81 removed `pkg_resources`**, so you must pin `<81`.
+- **A half-provisioned runtime must not look ready.** Checking that `python.exe` exists is not enough — an interrupted setup leaves an interpreter with no dependencies, and the app will skip setup and die on `ModuleNotFoundError` on every subsequent launch. Gate on a stamp written only after imports verify.
+- **Windows ships `tar.exe`, but Git for Windows shadows it** with GNU tar, which parses `C:\...` as a remote host. Pin `%SystemRoot%\System32\tar.exe` by absolute path.
+- **stderr must be drained continuously.** Library output is routed to stderr to keep stdout a clean protocol stream. Fill the ~4-8KB pipe buffer and the engine blocks on write — presenting as "a bit slow" with the GPU at 0%.
+- **`torchaudio.save` defaults to float32**, which the Python stdlib `wave` module refuses and HTML5 `<audio>` handles inconsistently. Pass `encoding="PCM_S", bits_per_sample=16`.
+
+## Limits
+
+- **Windows only.** macOS and Linux are not built.
+- **English only in this build.** The multilingual checkpoint (23 languages) is wired in the engine but not exposed in the UI.
+- **Quality depends on your sample.** Ten seconds of clean, dry, single-speaker audio beats a minute of noisy podcast. Background music ruins it.
+- **It does not verify consent.** See below.
+
+## Consent
+
+Cloning a voice is not a neutral act. Don't clone someone who hasn't agreed to it. Impersonation to commit fraud is a crime in most places, and "it was open source" is not a defense. This is for people making things with their own voice, or with a voice they have explicit permission to use.
 
 ## Credits
 
-Speech synthesis by [Chatterbox](https://github.com/resemble-ai/chatterbox)
-from Resemble AI (MIT). Soundalike is a desktop shell around it — the hard part
-is theirs.
+Speech synthesis by [Chatterbox](https://github.com/resemble-ai/chatterbox) from Resemble AI (MIT) — the hard part is theirs. Standalone Python builds from [astral-sh/python-build-standalone](https://github.com/astral-sh/python-build-standalone).
 
 ## License
 
