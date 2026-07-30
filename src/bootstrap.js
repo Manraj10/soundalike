@@ -19,6 +19,21 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
+// Single source of truth for the app identity, set here rather than in each
+// entry point.
+//
+// Electron derives userData from app.getName(), which defaults to package.json
+// "name". That used to be "voicebox" (the pre-rename folder), so the packaged
+// app provisioned into %APPDATA%/voicebox while a verifier script that called
+// app.setName("Soundalike") provisioned into %APPDATA%/Soundalike -- and
+// reported PASS for a path the shipped app never touched. Any per-entry-point
+// override can drift like that again, so the name is pinned once, in the module
+// that owns the path, and every caller inherits it.
+//
+// Must run before anything reads app.getPath("userData"), which is why it sits
+// at module load and not inside provision().
+app.setName("soundalike");
+
 const PY_VERSION = "3.11";
 const TORCH_INDEX = "https://download.pytorch.org/whl/cu124";
 const PBS_API =
