@@ -95,8 +95,11 @@ function smokeTest(py) {
         } else if (m.id === 2) {
           const wall = (Date.now() - t0) / 1000;
           const size = fs.existsSync(out) ? fs.statSync(out).size : 0;
-          log(`     generated ${m.data.seconds}s in ${wall.toFixed(1)}s ` +
-              `(RTF ${(wall / m.data.seconds).toFixed(2)}x), ${size.toLocaleString()} bytes`);
+          // Deliberately not reported as RTF: this span includes the ~35s cold
+          // model load, so dividing by audio length gives a number 15x worse
+          // than steady state. Use bench_turbo.py for real throughput.
+          log(`     generated ${m.data.seconds}s of audio, ${size.toLocaleString()} bytes ` +
+              `(${wall.toFixed(1)}s incl. cold model load -- not a throughput figure)`);
           clearTimeout(timer);
           send(3, "quit");
           if (size < 10000) return reject(new Error(`output too small: ${size} bytes`));
