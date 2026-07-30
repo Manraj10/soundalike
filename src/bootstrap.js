@@ -264,7 +264,20 @@ async function provision(report) {
 
   const py = pythonExe();
   report({ stage: "pip", pct: 0.12, detail: "preparing installer" });
-  await pipInstall(py, ["--upgrade", "pip"]);
+  // setuptools is NOT optional here. python-build-standalone's install_only
+  // build ships without it, and chatterbox's watermarker dependency (perth)
+  // still imports pkg_resources at module load. perth swallows that ImportError
+  // and sets PerthImplicitWatermarker to None, so the failure surfaces much
+  // later as "TypeError: 'NoneType' object is not callable" the first time
+  // someone generates audio. Every dev venv has setuptools, so this breaks only
+  // in the packaged build -- it works on the author's machine and fails for
+  // everyone who downloads the installer.
+  // The pin matters as much as the package: setuptools 81 dropped
+  // pkg_resources, so installing the current release (83 at time of writing)
+  // leaves perth just as broken as having no setuptools at all. This is a
+  // borrowed-time workaround -- the real fix is upstream in perth, which should
+  // use importlib.resources.
+  await pipInstall(py, ["--upgrade", "pip", "wheel", "setuptools<81"]);
 
   // Torch first, from the CUDA index. Biggest single step by far.
   report({ stage: "torch", pct: 0.15, detail: "downloading PyTorch (~2.5GB, one time)" });
@@ -280,8 +293,20 @@ async function provision(report) {
   // Prove it imports before claiming success -- a half-installed env that only
   // fails at generate time is far worse than failing loudly here.
   report({ stage: "verify", pct: 0.95, detail: "verifying" });
-  await run(py, ["-c",
-    "import torch, chatterbox.tts_turbo; print('cuda', torch.cuda.is_available())"]);
+  // Importing is not enough. perth catches its own ImportError and leaves
+  // PerthImplicitWatermarker as None, so `import chatterbox.tts_turbo` succeeded
+  // against a runtime that could not generate a single sample. Assert on the
+  // symbols that are actually called, and on a real torch op, so a broken
+  // environment fails here instead of on the user's first click.
+  await run(py, ["-c", [
+    "import torch, torchaudio, soundfile, pkg_resources",
+    "import perth",
+    "assert perth.PerthImplicitWatermarker is not None, 'perth watermarker unavailable (missing setuptools/pkg_resources)'",
+    "perth.PerthImplicitWatermarker()",
+    "from chatterbox.tts_turbo import ChatterboxTurboTTS",
+    "torch.zeros(4).sum()",
+    "print('verified cuda=%s' % torch.cuda.is_available())",
+  ].join("; ")]);
 
   // Only now that everything imports: drop the wheel cache. It is ~2.5GB and is
   // dead weight once installed. Kept until this point so retries could resume.

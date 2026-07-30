@@ -51,8 +51,9 @@ over more audio. Reproduce it yourself with `python bench_turbo.py`.
 Written here by me, before anyone else writes it for me:
 
 - **Windows only** right now. macOS and Linux are not built yet.
-- **First launch downloads ~3GB** — the Python runtime, PyTorch and the model
-  weights, once. After that it works with the network off.
+- **First launch takes ~17 minutes** — the Python runtime, PyTorch and the model
+  weights, once, ending at ~5.8GB on disk. After that it works with the network
+  off.
 - **Needs an NVIDIA GPU to be fast.** It runs on CPU, just slowly.
 - **Quality depends on your sample.** Ten seconds of clean, dry, single-speaker
   audio beats a minute of a noisy podcast clip. Background music ruins it.
@@ -69,18 +70,18 @@ own voice, or with a voice they have explicit permission to use.
 
 ## Status
 
-Working, not yet released. The engine is verified end to end and the Windows
-installer builds (82MB), but the first-run provisioning has not been tested on
-a clean machine yet, and the installer is unsigned. **Build from source for
-now** — a signed release comes once first-run setup is proven on hardware that
-isn't mine.
+Working. First-run provisioning is verified end to end on a clean runtime —
+`npm run verify:setup:fresh` provisions and then generates real audio through
+the same stdio protocol the app uses. Still unsigned, so a release build will
+trip SmartScreen until there's a certificate.
 
 ## Install
 
 *(once released)* Download the latest `.exe` from [Releases](../../releases)
 and run it.
 
-The installer is 82MB. On first launch the app fetches its own private Python
+The installer is 82MB. First launch takes about **17 minutes** on a ~4 MB/s
+connection and leaves a **5.8 GB** runtime — measured, not estimated. On first launch the app fetches its own private Python
 runtime, PyTorch and the model weights (~3GB) behind a progress bar, then never
 touches the network again. That lives in `%APPDATA%/Soundalike/runtime`, so
 uninstalling removes it and a broken environment can be fixed by deleting one
