@@ -30,10 +30,21 @@ function enginePaths() {
   return { py, script };
 }
 
-/** True when we can start the engine right now without provisioning. */
+/**
+ * True when we can start the engine right now without provisioning.
+ *
+ * Checking only that python.exe exists is not enough. If a first run is
+ * interrupted after CPython is extracted but before torch and chatterbox are
+ * installed, the interpreter is present and useless. That made the app skip
+ * setup and die on "ModuleNotFoundError: No module named 'chatterbox'" -- and
+ * it stayed broken on every subsequent launch, because the half-built runtime
+ * kept looking ready. A packaged build therefore requires the .provisioned
+ * stamp, which is only written after imports are verified.
+ */
 function runtimeReady() {
-  const { py } = enginePaths();
-  return Boolean(py) && fs.existsSync(py);
+  const venvPy = path.join(app.getAppPath(), ".venv", "Scripts", "python.exe");
+  if (!app.isPackaged && fs.existsSync(venvPy)) return true;
+  return bootstrap.isReady();
 }
 
 function send(channel, payload) {
@@ -165,7 +176,21 @@ function createWindow() {
   win.once("ready-to-show", () => win.show());
 }
 
-app.whenReady().then(createWindow);
+// A second instance would fight the first over the same userData directory --
+// that is what "Unable to move the cache: Access is denied" was -- and could
+// run two provisioning passes into the same folder at once. Focus the existing
+// window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+  app.whenReady().then(createWindow);
+}
 
 app.on("window-all-closed", () => {
   if (engine) { try { engine.stdin.write('{"cmd":"quit"}\n'); } catch {} engine.kill(); }
