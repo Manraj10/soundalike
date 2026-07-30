@@ -15,7 +15,10 @@ let lastOut = null;
 let busy = false;
 
 const STAGE_TEXT = {
-  loading_model: "loading model — first run downloads ~2GB, then it's cached",
+  // The first load after setup downloads ~2GB of weights with no incremental
+  // progress available from the library, so say that plainly. "Warming up" with
+  // a silent multi-minute pause reads as a hang and people kill the app.
+  loading_model: "first run: downloading ~2GB of voice model — several minutes, then cached forever",
   model_ready: "model ready",
   synthesizing: "generating…",
   gpu_failed: "GPU unavailable, falling back to CPU",
@@ -218,7 +221,10 @@ async function boot() {
   // wait after they hit Generate. Start it now, while they are still choosing a
   // voice and typing, so it is usually warm by the time they are ready.
   el.dot.className = "dot busy";
-  el.stage.textContent = "warming up the model…";
+  // Shown before the engine emits its first progress event. On a first run this
+  // period covers a ~2GB weight download and can last minutes, so do not call
+  // it "warming up" -- that promises seconds and makes people force-quit.
+  el.stage.textContent = "loading voice model — first run downloads ~2GB, this takes a few minutes";
   window.vb.load()
     .then(() => {
       el.dot.className = "dot ready";
