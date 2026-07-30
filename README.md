@@ -67,11 +67,20 @@ own voice, or with a voice they have explicit permission to use.
 
 ---
 
+## Status
+
+Working, not yet released. The engine is verified end to end and the Windows
+installer builds (82MB), but the first-run provisioning has not been tested on
+a clean machine yet, and the installer is unsigned. **Build from source for
+now** — a signed release comes once first-run setup is proven on hardware that
+isn't mine.
+
 ## Install
 
-Download the latest `.exe` from [Releases](../../releases) and run it.
+*(once released)* Download the latest `.exe` from [Releases](../../releases)
+and run it.
 
-The installer is ~90MB. On first launch the app fetches its own private Python
+The installer is 82MB. On first launch the app fetches its own private Python
 runtime, PyTorch and the model weights (~3GB) behind a progress bar, then never
 touches the network again. That lives in `%APPDATA%/soundalike/runtime`, so
 uninstalling removes it and a broken environment can be fixed by deleting one
