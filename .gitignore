@@ -1,0 +1,15 @@
+# python engine
+.venv/
+__pycache__/
+*.pyc
+
+# node / electron
+node_modules/
+dist/
+
+# generated audio + downloaded model weights
+out/
+models/
+*.wav
+*.mp3
+!assets/**/*.wav

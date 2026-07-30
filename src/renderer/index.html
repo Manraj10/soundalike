@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self' file: blob:; img-src 'self' data:;" />
+  <title>VoiceBox</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="statusDot" aria-hidden="true"></span>
+      <h1>VoiceBox</h1>
+    </div>
+    <div class="device" id="device" role="status" aria-live="polite">checking hardware…</div>
+  </header>
+
+  <div class="setup" id="setup" hidden>
+    <div class="setupCard">
+      <h2>One-time setup</h2>
+      <p>Soundalike is downloading the speech engine — about 3&nbsp;GB. This
+         happens once. After it finishes, the app works entirely offline.</p>
+      <div class="progress"><div class="fill" id="setupFill"></div></div>
+      <p class="setupDetail" id="setupDetail" role="status" aria-live="polite">starting…</p>
+      <p class="setupErr" id="setupErr" hidden role="alert"></p>
+      <button class="ghost" id="setupRetry" type="button" hidden>Try again</button>
+    </div>
+  </div>
+
+  <main>
+    <section class="panel">
+      <div class="label-row">
+        <label for="voiceBtn">Voice</label>
+        <span class="hint">At least 5s, 10–20s is best. Clean speech, no music. Optional — leave empty for the built-in voice.</span>
+      </div>
+      <div class="drop" id="drop">
+        <button class="ghost" id="voiceBtn" type="button">Choose an audio file</button>
+        <p class="dropHint">or drop a .wav / .mp3 here</p>
+        <div class="chosen" id="chosen" hidden>
+          <span class="fname" id="fname"></span>
+          <button class="link" id="clearVoice" type="button">clear</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel grow">
+      <div class="label-row">
+        <label for="text">Text</label>
+        <span class="hint"><span id="charCount">0</span> / 5000</span>
+      </div>
+      <textarea id="text" maxlength="5000" spellcheck="true"
+        placeholder="Type what you want it to say."></textarea>
+
+      <details class="adv">
+        <summary>Advanced</summary>
+        <div class="sliders">
+          <div class="slider">
+            <label for="exaggeration">Expressiveness <output id="exagOut">0.0</output></label>
+            <input type="range" id="exaggeration" min="0" max="1" step="0.05" value="0" />
+          </div>
+          <div class="slider">
+            <label for="cfg">Pacing <output id="cfgOut">0.0</output></label>
+            <input type="range" id="cfg" min="0" max="1" step="0.05" value="0" />
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="actions">
+      <button class="primary" id="go" type="button">Generate</button>
+      <span class="stage" id="stage" role="status" aria-live="polite"></span>
+    </section>
+
+    <section class="panel result" id="result" hidden>
+      <audio id="player" controls preload="metadata"></audio>
+      <div class="meta">
+        <span id="meta"></span>
+        <button class="link" id="revealBtn" type="button">show in folder</button>
+      </div>
+    </section>
+
+    <section class="panel error" id="error" hidden role="alert"></section>
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
