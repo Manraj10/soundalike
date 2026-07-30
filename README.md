@@ -82,7 +82,7 @@ and run it.
 
 The installer is 82MB. On first launch the app fetches its own private Python
 runtime, PyTorch and the model weights (~3GB) behind a progress bar, then never
-touches the network again. That lives in `%APPDATA%/soundalike/runtime`, so
+touches the network again. That lives in `%APPDATA%/Soundalike/runtime`, so
 uninstalling removes it and a broken environment can be fixed by deleting one
 folder. Nothing is installed system-wide, and your system Python — if you even
 have one — is not touched.
