@@ -87,26 +87,119 @@ async function download(url, dest, onProgress) {
   return dest;
 }
 
-function run(exe, args, { onLine, cwd } = {}) {
+/**
+ * Run a child process, failing if it goes silent.
+ *
+ * `idleMs` is the important part. A hung pip never exits, so an exit-code retry
+ * never fires -- observed in practice: pip sat at 0 bytes for 20 minutes with
+ * the CPU spinning inside its own retry loop, and --timeout did not save it.
+ * Treating "no output for N minutes" as a failure turns an infinite hang into a
+ * normal retryable error.
+ */
+function run(exe, args, { onLine, cwd, idleMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const p = spawn(exe, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let tail = "";
+    let settled = false;
+    let watchdog = null;
+
+    const finish = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      if (watchdog) clearTimeout(watchdog);
+      fn(arg);
+    };
+
+    const bumpWatchdog = () => {
+      if (!idleMs) return;
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        try { p.kill(); } catch {}
+        finish(reject, new Error(
+          `${path.basename(exe)} produced no output for ${Math.round(idleMs / 1000)}s ` +
+          `(stalled)\n${tail.slice(-2000)}`
+        ));
+      }, idleMs);
+    };
+
     const feed = (buf) => {
       const s = buf.toString("utf8");
       tail = (tail + s).slice(-4000);
+      bumpWatchdog();
       if (onLine) s.split(/\r?\n/).filter(Boolean).forEach(onLine);
     };
+
     // Both streams must be drained; pip writes progress to stderr and a full
     // pipe buffer would deadlock the child.
     p.stdout.on("data", feed);
     p.stderr.on("data", feed);
-    p.on("error", reject);
+    p.on("error", (e) => finish(reject, e));
     p.on("close", (code) =>
       code === 0
-        ? resolve()
-        : reject(new Error(`${path.basename(exe)} exited ${code}\n${tail}`))
+        ? finish(resolve)
+        : finish(reject, new Error(`${path.basename(exe)} exited ${code}\n${tail}`))
     );
+    bumpWatchdog();
   });
+}
+
+/**
+ * pip, with the flags and retries a 2.5GB download over a real connection needs.
+ *
+ * Observed failures on a cold run: pip's own resume gave up after repeated
+ * "Connection interrupted", and then died with WinError 32 -- antivirus holding
+ * the partially downloaded wheel open while pip tried to move it. Both are
+ * transient, so retry the whole command; pip's HTTP cache means an attempt
+ * resumes rather than restarting from zero.
+ *
+ * The cache is pinned inside our own runtime directory so partial downloads
+ * survive between attempts and get removed with the app on uninstall.
+ */
+async function pipInstall(py, args, { report, stage, base, span, attempts = 4 } = {}) {
+  const cacheDir = path.join(root(), "pip-cache");
+  const full = [
+    "-m", "pip", "install",
+    "--cache-dir", cacheDir,
+    "--retries", "10",
+    "--timeout", "60",
+    "--no-warn-script-location",
+    ...args,
+  ];
+
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await run(py, full, {
+        // pip prints a progress bar continuously while downloading, so five
+        // minutes of total silence means it is wedged, not working.
+        idleMs: 5 * 60 * 1000,
+        onLine: (l) => {
+          const m = l.match(/(\d+)\s*%/);
+          if (m && report && span) {
+            report({ stage, pct: base + (parseInt(m[1], 10) / 100) * span,
+                     detail: attempt > 1 ? `retrying (${attempt}/${attempts})` : undefined });
+          }
+        },
+      });
+      return;
+    } catch (e) {
+      lastErr = e;
+      const transient = /WinError 32|Connection interrupted|Read timed out|IncompleteRead|ConnectionReset|Temporary failure|stalled/i
+        .test(e.message);
+      if (attempt === attempts || !transient) break;
+      if (report) {
+        report({ stage, pct: base,
+                 detail: `download interrupted, retrying (${attempt + 1}/${attempts})` });
+      }
+      // A pip killed mid-write leaves a corrupt HTTP cache, and pip will then
+      // spin on it forever instead of re-downloading. Purge it so the retry is
+      // actually a fresh attempt rather than a replay of the broken state.
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+      // Give a virus scanner time to release the file it is holding open.
+      await new Promise((r) => setTimeout(r, 5000 * attempt));
+    }
+  }
+  throw lastErr;
 }
 
 /** Pick the Windows x86_64 "install_only" tarball from the latest PBS release. */
@@ -171,34 +264,17 @@ async function provision(report) {
 
   const py = pythonExe();
   report({ stage: "pip", pct: 0.12, detail: "preparing installer" });
-  await run(py, ["-m", "pip", "install", "--upgrade", "pip", "--no-warn-script-location"]);
+  await pipInstall(py, ["--upgrade", "pip"]);
 
   // Torch first, from the CUDA index. Biggest single step by far.
   report({ stage: "torch", pct: 0.15, detail: "downloading PyTorch (~2.5GB, one time)" });
-  await run(
-    py,
-    ["-m", "pip", "install", "torch", "torchaudio", "--index-url", TORCH_INDEX,
-     "--no-warn-script-location"],
-    {
-      onLine: (l) => {
-        const m = l.match(/(\d+)\s*%/);
-        if (m) {
-          report({ stage: "torch", pct: 0.15 + (parseInt(m[1], 10) / 100) * 0.55,
-                   detail: "installing PyTorch" });
-        }
-      },
-    }
-  );
+  await pipInstall(py, ["torch", "torchaudio", "--index-url", TORCH_INDEX], {
+    report, stage: "torch", base: 0.15, span: 0.55,
+  });
 
   report({ stage: "deps", pct: 0.72, detail: "installing speech model" });
-  await run(py, ["-m", "pip", "install", "chatterbox-tts", "--no-warn-script-location"], {
-    onLine: (l) => {
-      const m = l.match(/(\d+)\s*%/);
-      if (m) {
-        report({ stage: "deps", pct: 0.72 + (parseInt(m[1], 10) / 100) * 0.2,
-                 detail: "installing speech model" });
-      }
-    },
+  await pipInstall(py, ["chatterbox-tts"], {
+    report, stage: "deps", base: 0.72, span: 0.2,
   });
 
   // Prove it imports before claiming success -- a half-installed env that only
@@ -206,6 +282,10 @@ async function provision(report) {
   report({ stage: "verify", pct: 0.95, detail: "verifying" });
   await run(py, ["-c",
     "import torch, chatterbox.tts_turbo; print('cuda', torch.cuda.is_available())"]);
+
+  // Only now that everything imports: drop the wheel cache. It is ~2.5GB and is
+  // dead weight once installed. Kept until this point so retries could resume.
+  fs.rmSync(path.join(root(), "pip-cache"), { recursive: true, force: true });
 
   fs.writeFileSync(stampFile(), new Date().toISOString());
   report({ stage: "done", pct: 1, detail: "ready" });
