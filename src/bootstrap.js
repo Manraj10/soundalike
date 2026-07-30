@@ -176,6 +176,13 @@ async function pipInstall(py, args, { report, stage, base, span, attempts = 4 } 
     "-m", "pip", "install",
     "--cache-dir", cacheDir,
     "--retries", "10",
+    // The one that actually matters for a 2.5GB wheel. pip only caches
+    // COMPLETED downloads and discards the partial on failure, so relaunching
+    // pip restarts from zero -- on a connection that drops every few hundred MB
+    // it can never finish, which is exactly what was observed (pip-cache stuck
+    // at 1MB across retries). --resume-retries makes pip resume in-process from
+    // the bytes it already has. Requires pip >= 25.1; the runtime ships 26.x.
+    "--resume-retries", "20",
     "--timeout", "60",
     "--no-warn-script-location",
     ...args,
