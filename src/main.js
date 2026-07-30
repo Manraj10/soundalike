@@ -125,10 +125,10 @@ ipcMain.handle("engine:load", (_e, opts) => call("load", opts || {}));
 ipcMain.handle("engine:languages", () => call("languages", {}, 60000));
 
 ipcMain.handle("engine:synth", async (_e, opts) => {
-  const outDir = path.join(app.getPath("documents"), "VoiceBox");
+  const outDir = path.join(app.getPath("documents"), "Soundalike");
   fs.mkdirSync(outDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const out = path.join(outDir, `voicebox-${stamp}.wav`);
+  const out = path.join(outDir, `soundalike-${stamp}.wav`);
   return call("synth", { ...opts, out });
 });
 
