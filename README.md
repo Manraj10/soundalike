@@ -33,9 +33,17 @@ Longer inputs sit closer to realtime, since a fixed per-call cost is amortised o
 
 ## Status, honestly
 
-The engine works and is verified end to end. First-run provisioning works, but **is not reliable on a slow or unstable connection** — it pulls a single 2.5GB PyTorch wheel, and if the connection drops repeatedly, pip restarts rather than resuming and setup can fail. `--resume-retries` helps and did not fully solve it on my link. The fix is to fetch the wheel with a resumable ranged download instead of delegating to pip; that is the top open issue.
+Working and verified end to end on a clean machine: `npm run verify:setup:fresh`
+provisions a fresh runtime and then generates real audio through the same stdio
+protocol the app uses. Verified on the packaged build, not just in development —
+the two share one app identity so they cannot provision to different places.
 
-The installer is also **unsigned**, so SmartScreen will warn. Build from source until both are addressed.
+**First run took 38.6 minutes** on an unstable ~4MB/s connection and left a
+5.8GB runtime. Faster links will be quicker; the download resumes across drops
+rather than restarting, so a bad connection costs time, not failure.
+
+The installer is **unsigned**, so SmartScreen will warn until there's a
+certificate. Build from source if that bothers you.
 
 ## Build from source
 

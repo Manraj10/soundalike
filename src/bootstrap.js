@@ -36,6 +36,7 @@ app.setName("soundalike");
 
 const PY_VERSION = "3.11";
 const TORCH_INDEX = "https://download.pytorch.org/whl/cu124";
+const UA = "soundalike-bootstrap";
 const PBS_API =
   "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest";
 
@@ -224,6 +225,100 @@ async function pipInstall(py, args, { report, stage, base, span, attempts = 4 } 
   throw lastErr;
 }
 
+// The two big wheels, fetched out-of-band. pip is fine for the small deps.
+const TORCH_VER = "2.6.0+cu124";
+const BIG_WHEELS = [
+  `torch-${encodeURIComponent(TORCH_VER)}-cp311-cp311-win_amd64.whl`,
+  `torchaudio-${encodeURIComponent(TORCH_VER)}-cp311-cp311-win_amd64.whl`,
+];
+
+/**
+ * Download a large file with BITS, the transfer service built into Windows.
+ *
+ * pip cannot do this job here. It only caches COMPLETED downloads and discards
+ * the partial on failure, so a dropped connection restarts the 2.5GB torch
+ * wheel from zero -- on an unstable link it never converges, which is exactly
+ * what happened (setup cycling "retrying (3/4)" with the cache stuck at 1MB).
+ * --resume-retries helped and still did not finish.
+ *
+ * BITS resumes at the byte level, survives network loss, and is throttled and
+ * restartable by the OS. It is the correct primitive for this and costs no
+ * dependency.
+ */
+function bitsFetch(url, dest, onBytes) {
+  return new Promise((resolve, reject) => {
+    const ps = spawn("powershell.exe", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `$ErrorActionPreference='Stop';` +
+      `Start-BitsTransfer -Source '${url}' -Destination '${dest}' ` +
+      `-RetryInterval 60 -RetryTimeout 7200 -Priority Foreground`,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+
+    let tail = "";
+    ps.stdout.on("data", (d) => { tail = (tail + d).slice(-2000); });
+    ps.stderr.on("data", (d) => { tail = (tail + d).slice(-2000); });
+
+    // BITS grows the destination in place, so poll it for progress.
+    const timer = setInterval(() => {
+      try { onBytes(fs.statSync(dest).size); } catch {}
+    }, 2000);
+
+    ps.on("error", (e) => { clearInterval(timer); reject(e); });
+    ps.on("close", (code) => {
+      clearInterval(timer);
+      code === 0 ? resolve() : reject(new Error(`BITS transfer failed (${code}): ${tail}`));
+    });
+  });
+}
+
+/** Fetch the big wheels to disk, resuming across attempts. */
+async function fetchWheels(report) {
+  const dir = path.join(root(), "wheels");
+  fs.mkdirSync(dir, { recursive: true });
+  const paths = [];
+
+  for (let i = 0; i < BIG_WHEELS.length; i++) {
+    const name = BIG_WHEELS[i];
+    const url = `${TORCH_INDEX}/${name}`;
+    const dest = path.join(dir, decodeURIComponent(name));
+    paths.push(dest);
+
+    // Trust a wheel only if it matches the advertised length exactly. A short
+    // file here would surface much later as an unreadable-archive pip error.
+    let expected = 0;
+    try {
+      const head = await new Promise((res, rej) => {
+        const r = https.request(url, { method: "HEAD", headers: { "User-Agent": UA } }, res);
+        r.on("error", rej); r.end();
+      });
+      expected = parseInt(head.headers["content-length"] || "0", 10);
+      head.resume();
+    } catch { /* fall through; size check is skipped if HEAD fails */ }
+
+    if (fs.existsSync(dest) && expected && fs.statSync(dest).size === expected) {
+      report({ stage: "torch", pct: 0.15 + (i + 1) * 0.25, detail: `${path.basename(dest)} already downloaded` });
+      continue;
+    }
+    if (fs.existsSync(dest)) fs.rmSync(dest, { force: true }); // partial or wrong size
+
+    const base = 0.15 + i * 0.25;
+    await bitsFetch(url, dest, (bytes) => {
+      const frac = expected ? bytes / expected : 0;
+      report({
+        stage: "torch",
+        pct: base + frac * 0.25,
+        detail: `downloading ${i === 0 ? "PyTorch" : "torchaudio"} ` +
+                `${(bytes / 1e6).toFixed(0)}/${(expected / 1e6).toFixed(0)} MB`,
+      });
+    });
+
+    if (expected && fs.statSync(dest).size !== expected) {
+      throw new Error(`${path.basename(dest)} is ${fs.statSync(dest).size} bytes, expected ${expected}`);
+    }
+  }
+  return paths;
+}
+
 /** Pick the Windows x86_64 "install_only" tarball from the latest PBS release. */
 function pickAsset(release) {
   const want = (a) =>
@@ -301,11 +396,13 @@ async function provision(report) {
   // use importlib.resources.
   await pipInstall(py, ["--upgrade", "pip", "wheel", "setuptools<81"]);
 
-  // Torch first, from the CUDA index. Biggest single step by far.
+  // Torch first, biggest step by far. Fetched with BITS rather than pip so a
+  // dropped connection resumes instead of restarting 2.5GB from zero.
   report({ stage: "torch", pct: 0.15, detail: "downloading PyTorch (~2.5GB, one time)" });
-  await pipInstall(py, ["torch", "torchaudio", "--index-url", TORCH_INDEX], {
-    report, stage: "torch", base: 0.15, span: 0.55,
-  });
+  const wheels = await fetchWheels(report);
+
+  report({ stage: "torch", pct: 0.65, detail: "installing PyTorch" });
+  await pipInstall(py, [...wheels], { report, stage: "torch", base: 0.65, span: 0.07 });
 
   report({ stage: "deps", pct: 0.72, detail: "installing speech model" });
   await pipInstall(py, ["chatterbox-tts"], {
@@ -333,6 +430,9 @@ async function provision(report) {
   // Only now that everything imports: drop the wheel cache. It is ~2.5GB and is
   // dead weight once installed. Kept until this point so retries could resume.
   fs.rmSync(path.join(root(), "pip-cache"), { recursive: true, force: true });
+  // The downloaded wheels are ~2.6GB and are dead weight once installed. Kept
+  // until now so a failed install could retry without re-downloading.
+  fs.rmSync(path.join(root(), "wheels"), { recursive: true, force: true });
 
   fs.writeFileSync(stampFile(), new Date().toISOString());
   report({ stage: "done", pct: 1, detail: "ready" });
