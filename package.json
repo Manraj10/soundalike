@@ -17,13 +17,16 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "dev.voicebox.app",
-    "productName": "VoiceBox",
+    "appId": "dev.soundalike.app",
+    "productName": "Soundalike",
     "files": ["src/**/*", "package.json"],
     "extraResources": [
       { "from": "engine", "to": "engine", "filter": ["**/*.py"] }
     ],
-    "win": { "target": ["nsis"] },
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false
+    },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
   }
 }
