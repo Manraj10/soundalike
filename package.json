@@ -10,6 +10,8 @@
   "scripts": {
     "start": "electron .",
     "engine:test": "./.venv/Scripts/python.exe engine/test_engine.py",
+    "verify:setup": "electron scripts/verify-bootstrap.js",
+    "verify:setup:fresh": "electron scripts/verify-bootstrap.js --fresh",
     "dist": "electron-builder --win nsis"
   },
   "devDependencies": {

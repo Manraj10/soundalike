@@ -147,10 +147,26 @@ async function provision(report) {
     }
 
     report({ stage: "python", pct: 0.1, detail: "extracting Python" });
-    // tar.exe ships with Windows 10+ and handles .tar.gz natively.
-    await run("tar.exe", ["-xzf", tgz, "-C", R]);
+    // Use the bsdtar that ships in System32 by absolute path. Resolving "tar.exe"
+    // through PATH can find GNU tar (Git for Windows puts one there), which reads
+    // "C:\..." as a remote host spec and dies with "Cannot connect to C:".
+    // Passing a relative filename with cwd keeps a colon out of the args entirely.
+    const sysTar = path.join(
+      process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe"
+    );
+    const tarExe = fs.existsSync(sysTar) ? sysTar : "tar.exe";
+    await run(tarExe, ["-xzf", path.basename(tgz)], { cwd: R });
     if (!fs.existsSync(pythonExe())) throw new Error("extraction did not produce python.exe");
     fs.rmSync(tgz, { force: true });
+  }
+
+  // Drop any leftover download. The extraction branch above only runs when the
+  // interpreter is missing, so without this a stale 48MB archive can sit in
+  // userData indefinitely.
+  for (const f of fs.readdirSync(R)) {
+    if (f.startsWith("cpython-") && (f.endsWith(".tar.gz") || f.endsWith(".part"))) {
+      fs.rmSync(path.join(R, f), { force: true });
+    }
   }
 
   const py = pythonExe();
