@@ -11,6 +11,7 @@ const el = {
 };
 
 let voicePath = null;
+let loadTicker = null;   // set while the boot-time model load is running
 let lastOut = null;
 let busy = false;
 
@@ -142,7 +143,10 @@ el.text.addEventListener("keydown", (e) => {
 
 window.vb.onEvent((msg) => {
   if (msg.event === "progress") {
-    el.stage.textContent = STAGE_TEXT[msg.stage] || msg.stage;
+    // The boot ticker owns this line while it runs -- it carries elapsed
+    // seconds, which is strictly more useful than a static stage label, and
+    // two writers on one element just flickers.
+    if (!loadTicker) el.stage.textContent = STAGE_TEXT[msg.stage] || msg.stage;
   } else if (msg.event === "exited") {
     showError(`Engine stopped unexpectedly (code ${msg.code}). Reopen the app to retry.`);
     setBusy(false, "");
@@ -221,17 +225,29 @@ async function boot() {
   // wait after they hit Generate. Start it now, while they are still choosing a
   // voice and typing, so it is usually warm by the time they are ready.
   el.dot.className = "dot busy";
-  // Shown before the engine emits its first progress event. On a first run this
-  // period covers a ~2GB weight download and can last minutes, so do not call
-  // it "warming up" -- that promises seconds and makes people force-quit.
-  el.stage.textContent = "loading voice model — first run downloads ~2GB, this takes a few minutes";
+  // Two very different cases share this window: weights cached (~40s) and
+  // first run (~minutes, downloading 2GB). Announcing the slow case every time
+  // made a normal 40s load read as a hang. Start with the honest short message
+  // and escalate only once it has actually taken long enough to be the slow
+  // case, with a running counter so it never looks frozen.
+  const t0 = Date.now();
+  el.stage.textContent = "loading voice model…";
+  loadTicker = setInterval(() => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    el.stage.textContent = s < 25
+      ? `loading voice model… ${s}s`
+      : `downloading voice model (first run, ~2GB) — ${s}s elapsed, this is normal`;
+  }, 1000);
+  const stopTicker = () => { clearInterval(loadTicker); loadTicker = null; };
   window.vb.load()
     .then(() => {
+      stopTicker();
       el.dot.className = "dot ready";
       el.stage.textContent = "ready";
     })
     .catch((e) => {
       // Not fatal: Generate will retry the load and surface any real failure.
+      stopTicker();
       el.dot.className = "dot ready";
       el.stage.textContent = "";
       console.warn("preload failed, will retry on demand:", e);
