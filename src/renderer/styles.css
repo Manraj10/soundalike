@@ -8,7 +8,8 @@
   --accent: #6ee7a8;
   --accent-dim: #2f6b4d;
   --danger: #ff6b6b;
-  --radius: 10px;
+  --radius: 12px;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.35);
 }
 
 * { box-sizing: border-box; }
@@ -33,8 +34,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 16px 22px;
   border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255,255,255,.02), transparent);
   -webkit-app-region: drag;
 }
 
@@ -81,7 +83,8 @@ main {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow);
 }
 
 .panel.grow { flex: 1; display: flex; flex-direction: column; min-height: 200px; }
@@ -99,12 +102,13 @@ label { font-size: 12px; font-weight: 600; letter-spacing: .3px; text-transform:
 /* voice drop --------------------------------------------------------- */
 
 .drop {
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  padding: 18px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  padding: 26px 18px;
   text-align: center;
-  transition: border-color .2s, background .2s;
+  transition: border-color .18s, background .18s, transform .18s;
 }
+.drop:hover { border-color: #33404f; background: rgba(255,255,255,.015); }
 .drop.over { border-color: var(--accent); background: rgba(110, 231, 168, .05); }
 
 .dropHint { margin: 8px 0 0; font-size: 11px; color: var(--muted); }
@@ -158,16 +162,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 button { font: inherit; cursor: pointer; border-radius: 8px; }
 
 .primary {
-  background: var(--accent);
-  color: #0b2018;
+  background: linear-gradient(180deg, #7df0b5, var(--accent));
+  color: #06170f;
   border: none;
-  font-weight: 650;
-  padding: 11px 26px;
-  transition: filter .15s, transform .05s;
+  font-weight: 680;
+  letter-spacing: .2px;
+  padding: 12px 30px;
+  box-shadow: 0 4px 14px rgba(110,231,168,.18);
+  transition: filter .15s, transform .05s, box-shadow .15s;
 }
+.primary:hover:not(:disabled) { box-shadow: 0 6px 20px rgba(110,231,168,.28); }
 .primary:hover:not(:disabled) { filter: brightness(1.08); }
 .primary:active:not(:disabled) { transform: translateY(1px); }
-.primary:disabled { opacity: .45; cursor: default; }
+.primary:disabled { opacity: .4; cursor: default; box-shadow: none; filter: grayscale(.4); }
 
 .ghost {
   background: var(--panel-2);
@@ -195,6 +202,7 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 
 /* result / error ----------------------------------------------------- */
 
+.result { border-color: var(--accent-dim); }
 .result audio { width: 100%; }
 .meta {
   display: flex;
