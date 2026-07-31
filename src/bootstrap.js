@@ -271,6 +271,49 @@ function bitsFetch(url, dest, onBytes) {
   });
 }
 
+/**
+ * Resumable HTTP fallback for when BITS is unavailable or refuses the job.
+ * BITS has been observed reporting "There are currently no active network
+ * connections" on a machine that was plainly online, so this cannot be the only
+ * path. Uses a Range request to continue from whatever is already on disk.
+ */
+async function httpFetchResumable(url, dest, expected, onBytes, attempts = 8) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const have = fs.existsSync(dest) ? fs.statSync(dest).size : 0;
+    if (expected && have === expected) return;
+    if (expected && have > expected) fs.rmSync(dest, { force: true });
+
+    try {
+      await new Promise((resolve, reject) => {
+        const headers = { "User-Agent": UA };
+        if (have > 0) headers.Range = `bytes=${have}-`;
+        const req = https.get(url, { headers }, (res) => {
+          if (res.statusCode !== 200 && res.statusCode !== 206) {
+            res.resume();
+            return reject(new Error(`HTTP ${res.statusCode}`));
+          }
+          // A 200 to a Range request means the server ignored it: start over.
+          const append = res.statusCode === 206 && have > 0;
+          const out = fs.createWriteStream(dest, append ? { flags: "a" } : {});
+          let seen = append ? have : 0;
+          res.on("data", (c) => { seen += c.length; onBytes(seen); });
+          res.pipe(out);
+          out.on("finish", resolve);
+          out.on("error", reject);
+          res.on("error", reject);
+        });
+        req.on("error", reject);
+        req.setTimeout(120000, () => req.destroy(new Error("stalled")));
+      });
+      if (!expected || fs.statSync(dest).size === expected) return;
+    } catch (e) {
+      if (attempt === attempts) throw e;
+      await new Promise((r) => setTimeout(r, 3000 * attempt));
+    }
+  }
+  throw new Error(`could not finish downloading ${path.basename(dest)}`);
+}
+
 /** Fetch the big wheels to disk, resuming across attempts. */
 async function fetchWheels(report) {
   const dir = path.join(root(), "wheels");
@@ -302,15 +345,24 @@ async function fetchWheels(report) {
     if (fs.existsSync(dest)) fs.rmSync(dest, { force: true }); // partial or wrong size
 
     const base = 0.15 + i * 0.25;
-    await bitsFetch(url, dest, (bytes) => {
+    const label = i === 0 ? "PyTorch" : "torchaudio";
+    const onBytes = (bytes) => {
       const frac = expected ? bytes / expected : 0;
       report({
         stage: "torch",
         pct: base + frac * 0.25,
-        detail: `downloading ${i === 0 ? "PyTorch" : "torchaudio"} ` +
-                `${(bytes / 1e6).toFixed(0)}/${(expected / 1e6).toFixed(0)} MB`,
+        detail: `downloading ${label} ${(bytes / 1e6).toFixed(0)}/${(expected / 1e6).toFixed(0)} MB`,
       });
-    });
+    };
+
+    try {
+      await bitsFetch(url, dest, onBytes);
+    } catch (e) {
+      report({ stage: "torch", pct: base, detail: `${label}: retrying over HTTP` });
+      // BITS can refuse for reasons unrelated to actual connectivity; the HTTP
+      // path resumes from whatever bytes BITS already wrote.
+      await httpFetchResumable(url, dest, expected, onBytes);
+    }
 
     if (expected && fs.statSync(dest).size !== expected) {
       throw new Error(`${path.basename(dest)} is ${fs.statSync(dest).size} bytes, expected ${expected}`);
@@ -338,6 +390,15 @@ function pickAsset(release) {
 async function provision(report) {
   const R = root();
   fs.mkdirSync(R, { recursive: true });
+
+  // Already done: return immediately. Without this, every call re-ran the
+  // download and install steps against a working runtime -- wasteful at best,
+  // and an outright failure when the network layer refuses (BITS reporting
+  // "no active network connections" on a machine that was plainly online).
+  if (isReady()) {
+    report({ stage: "done", pct: 1, detail: "already set up" });
+    return { python: pythonExe(), alreadyProvisioned: true };
+  }
 
   if (!fs.existsSync(pythonExe())) {
     report({ stage: "python", pct: 0, detail: "finding a Python runtime" });
