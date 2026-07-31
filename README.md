@@ -2,7 +2,7 @@
 
 **Clone a voice on your own machine. ~600 lines, one job, no Python for the user.**
 
-<!-- docs/demo.gif goes here, above everything -->
+![Soundalike](docs/demo.gif)
 
 ## Read this first
 
