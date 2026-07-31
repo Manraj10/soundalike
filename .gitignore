@@ -13,3 +13,4 @@ models/
 *.wav
 *.mp3
 !assets/**/*.wav
+build/frames/
