@@ -172,6 +172,21 @@ function createWindow() {
     },
   });
   win.removeMenu();
+
+  // Forward renderer console + uncaught errors to the main process stdout.
+  // Without this a renderer exception is completely silent: the window stays on
+  // whatever it last painted, the engine sits loaded and idle, and there is no
+  // way to tell "still working" from "the UI died" from outside.
+  win.webContents.on("console-message", (_e, level, message, line, source) => {
+    const tag = ["log", "warn", "error"][level] || "log";
+    console.log(`[renderer:${tag}] ${message}` + (source ? ` (${source}:${line})` : ""));
+  });
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.log(`[renderer] process gone: ${JSON.stringify(details)}`);
+  });
+  win.webContents.on("preload-error", (_e, p, err) => {
+    console.log(`[preload-error] ${p}: ${err && err.message}`);
+  });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
   win.once("ready-to-show", () => win.show());
 }
