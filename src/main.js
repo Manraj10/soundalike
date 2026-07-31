@@ -164,6 +164,9 @@ function createWindow() {
     minHeight: 560,
     backgroundColor: "#0e0f13",
     show: false,
+    // Packaged builds take the icon from the exe resources; this covers the
+    // dev run and the taskbar grouping.
+    icon: path.join(app.getAppPath(), "build", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

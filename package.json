@@ -15,7 +15,8 @@
     "engine:test": "./.venv/Scripts/python.exe engine/test_engine.py",
     "verify:setup": "electron scripts/verify-bootstrap.js",
     "verify:setup:fresh": "electron scripts/verify-bootstrap.js --fresh",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "icon": "./.venv/Scripts/python.exe scripts/make_icon.py"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -26,6 +27,7 @@
     "productName": "Soundalike",
     "files": [
       "src/**/*",
+      "build/icon.*",
       "package.json"
     ],
     "extraResources": [
@@ -41,11 +43,16 @@
       "target": [
         "nsis"
       ],
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "directories": {
+      "buildResources": "build"
+    },
+    "afterPack": "scripts/after-pack.js"
   }
 }
