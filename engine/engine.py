@@ -26,6 +26,18 @@ import os
 import sys
 import traceback
 
+# Force classic HTTP downloads from the HuggingFace hub.
+#
+# chatterbox pulls in hf-xet, HuggingFace's Xet storage backend. On some
+# networks it stalls at zero bytes forever rather than erroring or falling back,
+# which presents as the app "not starting" -- the window opens, the engine is
+# healthy, and the weight download simply never advances. Observed here as three
+# .incomplete files sitting at 0 MB across a 20 minute run.
+#
+# Must be set before huggingface_hub is imported anywhere.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+
 _MODEL = None
 _DEVICE = None
 _KIND = None
