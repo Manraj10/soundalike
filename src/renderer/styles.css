@@ -226,6 +226,15 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
   padding: 24px;
 }
 
+/* An author `display` declaration beats the [hidden] attribute's UA
+   `display: none`, so `.setup { display: flex }` kept this overlay painted over
+   a fully working app forever -- showing its static markup ("One-time setup",
+   empty bar, "starting...") while the engine loaded and reached ready behind
+   it. Every log said healthy because the app WAS healthy; only the pixels lied.
+   Any element styled with display must restate its own hidden case. */
+.setup[hidden],
+[hidden] { display: none !important; }
+
 .setupCard { max-width: 460px; text-align: center; }
 .setupCard h2 { font-size: 18px; margin: 0 0 10px; }
 .setupCard p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
