@@ -189,17 +189,24 @@ setupEl.retry.addEventListener("click", async () => {
 // --- boot -----------------------------------------------------------------
 
 async function boot() {
+  console.log("boot: start");
   try {
-    if (await window.vb.setupNeeded()) {
+    const needed = await window.vb.setupNeeded();
+    console.log("boot: setupNeeded =", needed);
+    if (needed) {
       setupEl.wrap.hidden = false;
-      if (!(await runSetup())) return;
+      console.log("boot: running setup");
+      if (!(await runSetup())) { console.log("boot: setup failed"); return; }
+      console.log("boot: setup done");
     }
   } catch {
     // If the setup probe itself fails, fall through -- the status call below
     // will surface a concrete error rather than leaving a blank screen.
   }
   try {
+    console.log("boot: calling status");
     const s = await window.vb.status();
+    console.log("boot: status ok", JSON.stringify(s).slice(0,200));
     const bits = [s.device === "cuda" ? (s.gpu || "GPU") : s.device.toUpperCase()];
     if (s.vram_total_gb) bits.push(`${s.vram_total_gb}GB VRAM`);
     if (s.torch) bits.push(`torch ${s.torch}`);
@@ -242,12 +249,14 @@ async function boot() {
   window.vb.load()
     .then(() => {
       stopTicker();
+      console.log("boot: MODEL READY");
       el.dot.className = "dot ready";
       el.stage.textContent = "ready";
     })
     .catch((e) => {
       // Not fatal: Generate will retry the load and surface any real failure.
       stopTicker();
+      console.log("boot: LOAD FAILED", String(e && e.message || e));
       el.dot.className = "dot ready";
       el.stage.textContent = "";
       console.warn("preload failed, will retry on demand:", e);
